@@ -62,6 +62,7 @@ try:
     fb.login(TOKEN)
 except rest.ApiException as e:
     print("Exception: %s\n" % e)
+    sys.exit(1)
 
 
 total_account_bytes = 0
@@ -88,6 +89,8 @@ if total_account_bytes > quota_bytes:
     res = fb.object_store_users.list_object_store_users(filter='name=\'' + account_name + '/*\'')
     users = [r.name for r in res.items]
 
+    recovery_commands = []
+
     # For each user, remove the object-write policy. Handle 'full-access' special case.
     for user in users:
         # Get existing policies for the user.
@@ -100,14 +103,21 @@ if total_account_bytes > quota_bytes:
             print("Downgrading user {} from full-access policy. Adding: {}".format(user, ",".join(add_policies)))
             for policy in add_policies:
                 res = fb.object_store_access_policies.add_object_store_access_policies_object_store_users(member_names=[user], policy_names=[policy])
+                recovery_commands.append("purepolicy obj access remove --user {} {}".format(user, policy))
 
             # Then, remove full-access
             res = fb.object_store_access_policies.remove_object_store_access_policies_object_store_users(
                 member_names=[user], policy_names=["pure:policy/full-access"])
+            recovery_commands.append("purepolicy obj access add --user {} {}".format(user, "pure:policy/full-access"))
 
         if 'pure:policy/object-write' in user_policies:
             res = fb.object_store_access_policies.remove_object_store_access_policies_object_store_users(
                 member_names=[user], policy_names=["pure:policy/object-write"])
+            recovery_commands.append("purepolicy obj access add --user {} {}".format(user, "pure:policy/object-write"))
 
+if recovery_commands:
+    print("To recover policies back to original state, issue the following CLI commands:")
+    for c in recovery_commands:
+        print(c)
 
 fb.logout()
