@@ -4,6 +4,8 @@ from purity_fb import PurityFb, rest
 
 import argparse
 import os
+import smtplib
+import ssl
 import sys
 
 # Requirements: environments variables FB_MGMT_VIP and FB_MGMT_TOKEN.
@@ -40,6 +42,10 @@ def parse_bytes_string(input_string: str) -> int:
 FB_MGMT = os.environ.get('PUREFB_URL')
 TOKEN = os.environ.get('PUREFB_API')
 
+SMTP_ADDRESS = os.environ.get('SMTP_EMAIL')
+SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD')
+
+
 if not FB_MGMT or not TOKEN:
     print("Error. Requires FB_MGMT and TOKEN environment variables.")
     sys.exit(1)
@@ -66,20 +72,33 @@ except rest.ApiException as e:
     sys.exit(1)
 
 
+info_text = []
 total_account_bytes = 0
 try:
     for res in fb.buckets.list_buckets(filter='account.name=\'' + account_name + '\'').items:
         total_account_bytes += res.space.virtual
-        print("Bucket " + res.name + " " + humanize_bytes(res.space.virtual))
-    print("Total for " + account_name + " = " + humanize_bytes(total_account_bytes))
+        info_text.append("Bucket " + res.name + " " + humanize_bytes(res.space.virtual))
+    info_text.append("Total for " + account_name + " = " + humanize_bytes(total_account_bytes))
 
 except rest.ApiException as e:
     print("Unable to list buckets. Exception: %s\n" % e)
     sys.exit(1)
 
+print("\n".join(info_text))
 
 if total_account_bytes > quota_bytes:
-    print("WARN Quota exceeded for account {}".format(account_name))
+    print("WARN Quota of {} exceeded for account {}".format(args.quota, account_name))
+
+    if SMTP_ADDRESS:
+        print("Sending warning email through {}".format(SMTP_ADDRESS))
+
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL("smtp.gmail.com", context=context) as server:
+            server.login(SMTP_ADDRESS, SMTP_PASSWORD)
+            receiver_email = "joshua@purestorage.com"
+            message = "Subject: WARN Quota of {} exceeded for account {}".format(args.quota, account_name)
+            message = message + "\n\n" + "\n".join(info_text)
+            server.sendmail(SMTP_ADDRESS, receiver_email, message)
 
     if args.enforce:
         # Collect list of policies, in case we need to replace 'full-access'
