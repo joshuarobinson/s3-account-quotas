@@ -1,4 +1,7 @@
 # s3-account-quotas
+
+WARNING: this project is not actively maintained as of Apr-2022
+
 Python script to implement a quota enforcement algorithm per Object Store Account
 
 Example invocation:
